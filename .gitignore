@@ -1,0 +1,25 @@
+# Secrets (the .env template lives in docs/.env.example.md)
+.env
+.env.*
+!.env.example
+!docs/.env.example.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / Next.js
+node_modules/
+.next/
+
+# Local data and tooling output
+data/
+.claude/
+.playwright-mcp/
+frontend/.verify/
