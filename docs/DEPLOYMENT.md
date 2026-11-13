@@ -94,6 +94,11 @@ All of these are scrubbed from logs by value. Keep them in the environment or a 
 - Security headers are set by the app: Next sends CSP, `X-Frame-Options: DENY`, `nosniff`,
   `Referrer-Policy`, `Permissions-Policy` and (production) HSTS on every response; the API sends
   `nosniff` + `X-Frame-Options: DENY`. Serve over HTTPS so HSTS takes effect.
+- Set `PUBLIC_ORIGIN` (frontend) to the public web origin, e.g. `https://app.example.com`. The BFF's
+  CSRF check compares each write's `Origin` with it. Unset, it uses the `Host` header (so the proxy
+  must pass the original `Host` through, e.g. nginx `proxy_set_header Host $host`) and the scheme
+  from `X-Forwarded-Proto`; `X-Forwarded-Host` is ignored. The server's own bind address
+  (`http://0.0.0.0:3000` in the container) is never compared.
 - `CORS_ORIGINS` must list the frontend origin(s).
 - OAuth: `OAUTH_REDIRECT_BASE` is the public WEB app base (default `http://localhost:3000`); the
   redirect URI registered with each provider is `<OAUTH_REDIRECT_BASE>/oauth/finish`. That page

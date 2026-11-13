@@ -15,6 +15,15 @@ const REFRESH_MAX_AGE = 60 * 60 * 24 * REFRESH_TTL_DAYS;
 /** S11: how many reverse proxies in front of Next append to X-Forwarded-For (1 = one nginx/load balancer). */
 const TRUSTED_PROXY_HOPS = z.coerce.number().int().min(1).max(10).parse(process.env.TRUSTED_PROXY_HOPS || 1);
 
+/** The origin browsers use to reach the app (https://app.example.com); the CSRF check's expected Origin. */
+const PUBLIC_ORIGIN = z
+  .string()
+  .refine((v) => /^https?:\/\/[^/]+$/.test(v) && URL.canParse(v) && new URL(v).origin === v, {
+    message: "PUBLIC_ORIGIN must be an http(s) origin with no path or trailing slash",
+  })
+  .optional()
+  .parse(process.env.PUBLIC_ORIGIN || undefined);
+
 export const tokenPair = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1),
@@ -46,9 +55,26 @@ export function clearSessionCookies(res: NextResponse): void {
  * Without a proxy in front, a client-sent header survives Next unchanged: production must run behind one.
  */
 export function clientIp(req: Request): string | null {
-  const hops = (req.headers.get("x-forwarded-for") ?? "").split(",").map((h) => h.trim()).filter(Boolean);
-  const ip = hops.at(-Math.min(TRUSTED_PROXY_HOPS, hops.length));
+  const ip = trustedHop(req, "x-forwarded-for");
   return ip && isIP(ip) ? ip : null;
+}
+
+/** The entry of a comma-appended forwarding header that the outermost trusted proxy wrote. */
+function trustedHop(req: Request, header: string): string | undefined {
+  const hops = (req.headers.get(header) ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+  return hops.at(-Math.min(TRUSTED_PROXY_HOPS, hops.length));
+}
+
+/**
+ * PUBLIC_ORIGIN when set; otherwise the Host the browser sent, with the scheme the trusted proxy reported.
+ * nextUrl.origin is not usable: the standalone server builds it from HOSTNAME/PORT (http://0.0.0.0:3000).
+ * X-Forwarded-Host is never read, so a proxy must keep the Host header (or PUBLIC_ORIGIN must be set).
+ */
+function expectedOrigin(req: NextRequest): string {
+  if (PUBLIC_ORIGIN) return PUBLIC_ORIGIN;
+  const proto = trustedHop(req, "x-forwarded-proto")?.toLowerCase();
+  const scheme = proto === "http" || proto === "https" ? proto : req.nextUrl.protocol.slice(0, -1);
+  return `${scheme}://${(req.headers.get("host") ?? req.nextUrl.host).toLowerCase()}`;
 }
 
 /**
@@ -118,7 +144,7 @@ export async function refreshTokens(
 export function crossSiteResponse(req: NextRequest): NextResponse | null {
   const site = req.headers.get("sec-fetch-site");
   const origin = req.headers.get("origin");
-  if ((site !== null && site !== "same-origin") || (origin !== null && origin !== req.nextUrl.origin))
+  if ((site !== null && site !== "same-origin") || (origin !== null && origin !== expectedOrigin(req)))
     return NextResponse.json(
       { error: { code: "forbidden", message: "Cross-site request blocked.", request_id: crypto.randomUUID() } },
       { status: 403 },
