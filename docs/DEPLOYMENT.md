@@ -91,8 +91,7 @@ validates it with kubeconform.
   exits.
 - The `/models` volume is an `emptyDir` per pod, so every new pod downloads models on first use. At
   scale, or when egress to huggingface.co is blocked, use a pre-filled `ReadOnlyMany` PVC.
-- Known: the API pod does not exit on SIGTERM yet, so it is killed at the end of the 30 s grace
-  period. The first search after a start loads the embedding model, so it is slower.
+- The first search after a start loads the embedding model, so it is slower.
 
 ## Network exposure (compose)
 
@@ -165,7 +164,14 @@ All of these are scrubbed from logs by value. Keep them in the environment or a 
   `running`; the reaper fails them after the 4 h time limit + 10 min. Messages a killed worker held are
   redelivered by Dramatiq maintenance later; `POST /v1/documents/{id}/reprocess` recovers a stuck
   document at once.
-- API: uvicorn graceful shutdown. A cut SSE answer saves the partial message.
+- API: uvicorn graceful shutdown. In-flight requests and SSE streams get 20 s
+  (`--timeout-graceful-shutdown 20`), then are cancelled; a cut SSE answer saves the partial
+  message. Keep the stop grace period above 20 s (K8s `terminationGracePeriodSeconds: 30`, compose
+  `stop_grace_period: 30s`). A clean stop exits with 143: uvicorn re-raises SIGTERM after shutdown.
+- The image runs `tini` as PID 1. Without it the process would be PID 1, which ignores
+  default-action signals, so uvicorn's re-raised SIGTERM was dropped and the container waited on a
+  busy worker thread (e.g. the first search loading the model) until SIGKILL. Overriding the
+  entrypoint drops `tini`; keep it first, or run with `docker run --init`.
 
 ## Upgrades
 

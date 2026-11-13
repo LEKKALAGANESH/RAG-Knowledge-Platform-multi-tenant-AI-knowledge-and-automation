@@ -120,6 +120,26 @@ jobs:
       - run: docker build -t rag-web:ci frontend
       - name: Smoke the backend image (tesseract, non-root)
         run: docker run --rm --entrypoint sh rag-backend:ci -c 'test "$(id -u)" = 10001 && tesseract --list-langs | grep -qx eng'
+      # The api role must exit on SIGTERM (143 = uvicorn re-raising it under tini), not wait for SIGKILL.
+      # Startup does not connect to the database, so dummy settings are enough.
+      - name: API stops on SIGTERM
+        run: |
+          docker run -d --name sigterm-api \
+            -e DATABASE_URL=postgresql+asyncpg://u:p@127.0.0.1:1/x \
+            -e MIGRATION_DATABASE_URL=postgresql+asyncpg://u:p@127.0.0.1:1/x \
+            -e JWT_SECRET="$(openssl rand -hex 32)" \
+            -e FERNET_KEYS="$(openssl rand -base64 32 | tr '+/' '-_')" rag-backend:ci
+          for _ in $(seq 60); do
+            docker exec sigterm-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')" && break
+            sleep 1
+          done
+          start=$(date +%s)
+          docker stop -t 20 sigterm-api
+          took=$(( $(date +%s) - start ))
+          code=$(docker inspect -f '{{.State.ExitCode}}' sigterm-api)
+          docker logs sigterm-api 2>&1 | tail -5
+          echo "stopped in ${took}s, exit $code"
+          test "$code" = 143 && test "$took" -lt 10
       - name: Render + validate deploy/k8s
         run: |
           docker run --rm -v "$PWD/deploy/k8s:/k8s:ro" registry.k8s.io/kustomize/kustomize:v5.7.1 \
