@@ -1,0 +1,181 @@
+name: rag
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD:?set OWNER_DB_PASSWORD in .env}
+    ports:
+      # Loopback only (IPv4 + IPv6, so `localhost` is not a 2 s ::1 timeout on Windows): nothing on
+      # the LAN reaches the DB, queue or object store.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "[::1]:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP, not the socket: initdb's temporary server listens on the socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U rag -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # Password via env, not argv, so it does not show in `ps`; REDIS_URL carries it for the app.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "[::1]:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    # Official minio/minio images are no longer published on Docker Hub; this is a pinned MinIO build.
+    image: bitnamilegacy/minio:2025.7.23
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "[::1]:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "[::1]:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    # Optional (VECTOR_STORE=qdrant): `docker compose --profile qdrant up -d qdrant`. Not started by
+    # default; the app keeps vectors in pgvector unless told otherwise.
+    profiles: ["qdrant"]
+    image: qdrant/qdrant:v1.20.0
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+      - "[::1]:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrantdata:/qdrant/storage
+
+  # ---- Application (profile `app`): `docker compose --profile app up -d --build` ----------------
+  # Secrets/settings (JWT_SECRET, FERNET_KEYS, API_KEY_PEPPER, LLM keys, ...) come from RAG_ENV_FILE
+  # (default: the git-ignored `.env`). In-network URLs are built here from the same DB/Redis/MinIO
+  # passwords the infra services use, so they must be URL-safe (hex). See docs/DEPLOYMENT.md.
+  migrate:
+    profiles: ["app"]
+    image: rag-backend:${RAG_TAG:-local}
+    build: ./backend
+    command: ["migrate"]
+    env_file: &app-env
+      - path: ${RAG_ENV_FILE:-.env}
+        required: false
+    environment:
+      <<: &backend-env
+        DATABASE_URL: &app-db postgresql+asyncpg://rag_app:${APP_DB_PASSWORD}@db:5432/rag
+        # Only Alembic reads this; runtime services get the rag_app URL so they never hold owner creds.
+        MIGRATION_DATABASE_URL: *app-db
+        REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+        BLOB_BACKEND: s3
+        S3_ENDPOINT_URL: http://minio:9000
+        S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+        S3_SECRET_KEY: ${S3_SECRET_KEY}
+        # Only the web container sits on `edge`, so only the BFF may set the client IP.
+        FORWARDED_ALLOW_IPS: ${RAG_EDGE_SUBNET:-10.231.47.0/24}
+        CORS_ORIGINS: http://localhost:${WEB_PORT:-3000}
+        OAUTH_REDIRECT_BASE: http://localhost:${WEB_PORT:-3000}
+        FRONTEND_URL: http://localhost:${WEB_PORT:-3000}
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://rag_owner:${OWNER_DB_PASSWORD}@db:5432/rag
+    depends_on:
+      db: { condition: service_healthy }
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck: { disable: true }
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    image: rag-backend:${RAG_TAG:-local}
+    command: ["api"]
+    env_file: *app-env
+    environment: *backend-env
+    depends_on: &after-migrate
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    networks: [default, edge]
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes: &models
+      - models:/models
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  worker:
+    profiles: ["app"]
+    image: rag-backend:${RAG_TAG:-local}
+    command: ["worker", "--processes", "1", "--threads", "4"]
+    env_file: *app-env
+    environment: *backend-env
+    depends_on: *after-migrate
+    volumes: *models
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck: { disable: true }
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+  scheduler:
+    profiles: ["app"]
+    image: rag-backend:${RAG_TAG:-local}
+    command: ["scheduler", "--interval", "60"]
+    env_file: *app-env
+    environment: *backend-env
+    depends_on: *after-migrate
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck: { disable: true }
+    restart: unless-stopped
+
+  web:
+    profiles: ["app"]
+    image: rag-web:${RAG_TAG:-local}
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "[::1]:${WEB_PORT:-3000}:3000"
+    read_only: true
+    tmpfs: ["/app/.next/cache:uid=1000,gid=1000"]
+    restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${RAG_EDGE_SUBNET:-10.231.47.0/24}
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  qdrantdata:
+  models:
