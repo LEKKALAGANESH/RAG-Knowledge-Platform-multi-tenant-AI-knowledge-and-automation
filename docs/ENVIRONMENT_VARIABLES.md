@@ -22,6 +22,7 @@ and must never be committed.
 | `CORS_ORIGINS` | `http://localhost:3000` | | | Comma-separated allowed origins |
 | `LOG_LEVEL` | `INFO` | | | Root log level |
 | `EMBEDDING_API_KEY` | none | | yes | Read here only for log scrubbing; used by the embedder (below) |
+| `QDRANT_API_KEY`, `RERANK_API_KEY` | none | | yes | Read here only for log scrubbing; used by `retrieval/qdrant_store` and `retrieval/rerank` (below) |
 | `CONNECTORS_ALLOW_PRIVATE_ENDPOINTS` | `false` | | | Server gate for per-source `allow_private_endpoint` (RFC1918/ULA). Self-hosted/BYOC only |
 | `API_KEY_PEPPER` | none (derived from `JWT_SECRET`) | | yes | HMAC key for API-key hashes and audit IP hashes. Set it in production |
 | `RATE_LIMIT_AUTH` | `10` | | | Login + register requests per minute per client IP |
@@ -121,7 +122,7 @@ Changing the embedding settings affects new indexes only. Existing KBs keep thei
 |---|---|---|---|---|
 | `VECTOR_STORE` | `pgvector` | | | `pgvector` (vectors in the app DB) or `qdrant` (external Qdrant, e.g. customer-owned). Deployment-wide; switching it needs a reindex of every KB (vector leg returns nothing for an index built in the other store; keyword still answers) |
 | `QDRANT_URL` | `http://localhost:6333` | if `qdrant` | | Qdrant REST URL. Operator-set, never user input (not passed through the connector SSRF guard) |
-| `QDRANT_API_KEY` | none | | yes | Qdrant API key. Not yet in the core log-scrub list (`core/config.secret_values`); the `api_key=` pattern scrubber still applies |
+| `QDRANT_API_KEY` | none | | yes | Qdrant API key. Mirrored in core config (above) so it is scrubbed from logs by value |
 | `QDRANT_TIMEOUT_S` | `10` | | | Per-request timeout, seconds (> 0) |
 
 ## Reranker: `backend/app/retrieval/rerank.py` (`RerankSettings`)
@@ -154,6 +155,17 @@ Changing the embedding settings affects new indexes only. Existing KBs keep thei
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | – | yes | yes | MinIO root credentials (same vars as the blob store) |
 | `MINIO_PORT` | `9000` | | | Host port (API) |
 | `MINIO_CONSOLE_PORT` | `9001` | | | Host port (console) |
+| `QDRANT_PORT` | `6333` | | | Host port (profile `qdrant`) |
+| `RAG_ENV_FILE` | `.env` | | | Env file the `app` profile services read for app settings and secrets (`JWT_SECRET`, `FERNET_KEYS`, provider keys, ...) |
+| `RAG_TAG` | `local` | | | Tag of the `rag-backend` / `rag-web` images built and run by the `app` profile |
+| `API_PORT` | `8000` | | | Host port of the API (`127.0.0.1` only) |
+| `WEB_PORT` | `3000` | | | Host port of the web app (loopback only); also sets the API's `CORS_ORIGINS`, `OAUTH_REDIRECT_BASE`, `FRONTEND_URL` to `http://localhost:<WEB_PORT>` |
+| `RAG_EDGE_SUBNET` | `10.231.47.0/24` | | | Subnet of the `edge` network (web + api only); also the API's `FORWARDED_ALLOW_IPS` in compose. Change it if it overlaps a local network |
+
+The backend image sets `FASTEMBED_CACHE_PATH=/models/fastembed`, `HF_HOME=/models/hf`,
+`TRANSCRIBE_MODEL_DIR=/models/whisper` (model caches on the `/models` volume) and
+`BLOB_DIR=/data/blobs`. Compose builds `DATABASE_URL`, `MIGRATION_DATABASE_URL`, `REDIS_URL` and the
+S3 settings for the `app` services from the variables above; see [DEPLOYMENT.md](DEPLOYMENT.md#containers).
 
 ## Tests and evals only (`backend/tests/conftest.py`, `backend/evals/run_eval.py`)
 

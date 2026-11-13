@@ -22,6 +22,12 @@ HAVE_TESSERACT = shutil.which("tesseract") is not None
 MISSING = "no-such-tesseract-binary"
 
 
+@pytest.fixture(autouse=True)
+def _restore_pil_pixel_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PIL's pixel cap is process-global; a test that changes it must not leak into the next."""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
+
+
 def image(fmt: str = "PNG", size: tuple[int, int] = (200, 80), frames: int = 1) -> bytes:
     imgs = [Image.new("RGB", size, "white") for _ in range(frames)]
     out = io.BytesIO()
@@ -102,10 +108,18 @@ def test_ocr_finding_nothing_is_a_warning(
 
 
 def test_image_over_pixel_cap_is_refused(fake_ocr: list[tuple[int, int]]) -> None:
+    pil_cap = Image.MAX_IMAGE_PIXELS
     for cap in (10_000, 5_000):  # 16,000 px: over the cap, then over PIL's 2x bomb threshold
         with pytest.raises(ParseError, match="pixels"):
             parse(mime.PNG, image(size=(200, 80)), settings(max_image_pixels=cap))
     assert fake_ocr == []
+    assert Image.MAX_IMAGE_PIXELS == pil_cap  # in-process callers keep PIL's own cap
+
+
+def test_parsing_an_image_leaves_the_pil_pixel_cap_alone(fake_ocr: list[tuple[int, int]]) -> None:
+    pil_cap = Image.MAX_IMAGE_PIXELS
+    parse(mime.PNG, image(), settings(max_image_pixels=50_000))
+    assert Image.MAX_IMAGE_PIXELS == pil_cap
 
 
 def test_without_tesseract_images_fail_readably_and_pdfs_keep_the_warning() -> None:

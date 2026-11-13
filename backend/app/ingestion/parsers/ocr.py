@@ -48,11 +48,18 @@ def parse_image(data: bytes, s: IngestionSettings) -> ParsedDoc:
     """One section per frame (multi-page TIFF); frames share the PDF page cap."""
     if not ocr_enabled(s):
         raise ParseError(UNAVAILABLE)
-    Image.MAX_IMAGE_PIXELS = s.max_image_pixels  # PIL refuses > 2x this at open()
+    # PIL refuses > 2x this at open() and on some frame seeks; it is process-global, so restore it
+    old_cap, Image.MAX_IMAGE_PIXELS = Image.MAX_IMAGE_PIXELS, s.max_image_pixels
     try:
-        img = Image.open(io.BytesIO(data))  # lazy: header only, nothing decoded yet
+        return _ocr_frames(data, s)
     except Image.DecompressionBombError:
         raise ParseError(f"{TOO_BIG} (an image over {s.max_image_pixels:,} pixels).") from None
+    finally:
+        Image.MAX_IMAGE_PIXELS = old_cap
+
+
+def _ocr_frames(data: bytes, s: IngestionSettings) -> ParsedDoc:
+    img = Image.open(io.BytesIO(data))  # lazy: header only, nothing decoded yet
     doc = ParsedDoc()
     for n, frame in enumerate(ImageSequence.Iterator(img), start=1):
         if n > s.max_pdf_pages:

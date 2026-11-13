@@ -1,8 +1,9 @@
 # Deployment
 
-Only a local Docker Compose setup exists. There are no production manifests (Kubernetes, Terraform)
-and no CI pipeline yet; treat this page as the runbook for running the processes, not as a
-production-readiness claim.
+Three ways to run it: the processes directly (below), the container images through Docker Compose
+([Containers](#containers)), or the Kubernetes example manifests in `deploy/k8s`
+([Kubernetes](#kubernetes)). No Terraform or hosted environment exists; treat this page as the
+runbook, not as a production-readiness claim.
 
 ## Processes
 
@@ -42,6 +43,56 @@ MIGRATION_DATABASE_URL=postgresql+asyncpg://rag:<POSTGRES_PASSWORD>@localhost:54
 
 Then set `MIGRATION_DATABASE_URL` to `rag_owner`. The test suite does the same for old `rag_test*`
 databases on its next run. (Git Bash: prefix `docker compose exec` with `MSYS_NO_PATHCONV=1`.)
+
+## Containers
+
+- One backend image (`backend/Dockerfile`, user 10001) runs every role, picked by the first
+  argument: `api` (default), `worker`, `scheduler`, `migrate` (`alembic upgrade head`). The web image
+  (`frontend/Dockerfile`) is the Next.js standalone server (user 1000).
+- OCR works out of the box: the image ships `tesseract` with English data (`eng`). Add
+  `tesseract-ocr-<lang>` packages for more `OCR_LANGS`.
+- Model caches (fastembed, Hugging Face, Whisper) live under `/models`, a volume, so containers run
+  with a read-only root filesystem. Image env: [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md#docker-compose-docker-composeyml).
+- Whole stack: `docker compose --profile app up -d --build`. `migrate` runs once, then `api`,
+  `worker`, `scheduler` and `web` start.
+- Secrets and app settings (`JWT_SECRET`, `FERNET_KEYS`, `API_KEY_PEPPER`, provider keys, ...) come
+  from `RAG_ENV_FILE` (default `.env`). The in-network `DATABASE_URL`, `MIGRATION_DATABASE_URL` and
+  `REDIS_URL` are built by compose from `APP_DB_PASSWORD`, `OWNER_DB_PASSWORD`, `REDIS_PASSWORD`, and
+  the blob store from `S3_ACCESS_KEY`/`S3_SECRET_KEY`. These values go into URLs unescaped, so they
+  must be URL-safe (hex, e.g. `openssl rand -hex 24`).
+- Ports: web on `127.0.0.1:${WEB_PORT}` (and `[::1]`), API on `127.0.0.1:${API_PORT}`. The web
+  container is published with no reverse proxy in front, so this setup is for local use only; in
+  production put a proxy in front (see [Reverse proxy](#reverse-proxy)).
+- Windows: pick `WEB_PORT`/`API_PORT` outside the ranges listed by
+  `netsh int ipv4 show excludedportrange protocol=tcp`, and give `RAG_ENV_FILE` as a `C:/...` path
+  (forward slashes).
+
+## Kubernetes
+
+`deploy/k8s/base` holds the manifests; deploy through an overlay (`deploy/k8s/overlays/example`
+sets the image names/tags, worker replicas and public host). CI renders the example overlay and
+validates it with kubeconform.
+
+- Postgres (pgvector), Redis, S3 and (optional) Qdrant are external. Point `secret.yaml` and
+  `configmap.yaml` at them.
+- `secret.yaml` holds `REPLACE_ME` placeholders only. Replace them through a secret manager
+  (External Secrets, Sealed Secrets, SOPS) or an overlay `secretGenerator`; never commit real values.
+  The `rag-migrate` Secret carries the owner-role URL and is read only by the migration Job.
+- `rag-migrate` is a Job, and Jobs are immutable: delete the finished Job (or wait for its 1 h TTL)
+  before applying a new image tag.
+- Set `FORWARDED_ALLOW_IPS` (configmap) to the cluster pod CIDR. This is safe because the
+  NetworkPolicy lets only web pods reach the API.
+- The ingress `proxy-body-size` (51m) tracks `MAX_UPLOAD_MB` (50) + 1 MB; change both together.
+  Only the web service is exposed; the API stays cluster-internal.
+- The NetworkPolicy matches external dependencies by port (5432, 6379, 9000/443, 6333), not address.
+  Narrow `to:` with `ipBlock`/`namespaceSelector` for your cluster. Ingress to web is allowed from the
+  `ingress-nginx` namespace.
+- Worker and scheduler have no probes (no HTTP endpoint); Kubernetes restarts them when the process
+  exits.
+- The `/models` volume is an `emptyDir` per pod, so every new pod downloads models on first use. At
+  scale, or when egress to huggingface.co is blocked, use a pre-filled `ReadOnlyMany` PVC.
+- Known: the API pod does not exit on SIGTERM yet, so it is killed at the end of the 30 s grace
+  period. The first search after a start loads the embedding model, so it is slower.
 
 ## Network exposure (compose)
 
@@ -128,7 +179,9 @@ All of these are scrubbed from logs by value. Keep them in the environment or a 
 
 `.github/workflows/ci.yml` checks every push and pull request; it does not deploy. It starts
 Postgres/Redis/MinIO from `docker-compose.yml` with per-run generated passwords, so the role
-bootstrap in `backend/docker/initdb` is exercised on every run. Process start: `import app.worker`
+bootstrap in `backend/docker/initdb` is exercised on every run. The `images` job builds both images
+(no push), checks the backend image runs as uid 10001 with tesseract `eng`, and validates the
+rendered `deploy/k8s/overlays/example` with kubeconform. Process start: `import app.worker`
 no longer loads the `anthropic`/`openai` SDKs (they load on the first LLM call), about 4 s instead
 of 11 s.
 
