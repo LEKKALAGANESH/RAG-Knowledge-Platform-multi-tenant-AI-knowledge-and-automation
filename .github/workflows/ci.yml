@@ -110,6 +110,23 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1
           git /repo --redact --no-banner -v
 
+  # Builds both images (no push) and schema-checks the rendered K8s example overlay.
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t rag-backend:ci backend
+      - run: docker build -t rag-web:ci frontend
+      - name: Smoke the backend image (tesseract, non-root)
+        run: docker run --rm --entrypoint sh rag-backend:ci -c 'test "$(id -u)" = 10001 && tesseract --list-langs | grep -qx eng'
+      - name: Render + validate deploy/k8s
+        run: |
+          docker run --rm -v "$PWD/deploy/k8s:/k8s:ro" registry.k8s.io/kustomize/kustomize:v5.7.1 \
+            build /k8s/overlays/example > "$RUNNER_TEMP/k8s.yaml"
+          docker run --rm -v "$RUNNER_TEMP:/m:ro" ghcr.io/yannh/kubeconform:v0.7.0 \
+            -strict -summary -kubernetes-version 1.33.0 /m/k8s.yaml
+
   # AC4 retrieval thresholds on the seed set (tests/test_evals.py). Also part of `backend`;
   # this job runs it alone on main and on demand so a regression is named in its own check.
   eval:
