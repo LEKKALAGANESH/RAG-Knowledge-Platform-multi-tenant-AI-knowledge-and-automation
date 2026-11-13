@@ -1,0 +1,60 @@
+{
+  "type": "gdrive",
+  "title": "Google Drive",
+  "description": "Files and Google Docs/Sheets/Slides from selected Drive folders. Read-only.",
+  "category": "storage",
+  "auth": "oauth2",
+  "config_schema": {
+    "properties": {
+      "folder_ids": {
+        "default": [],
+        "description": "Folder IDs from the Drive URL; empty = My Drive",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 100,
+        "title": "Folder Ids",
+        "type": "array"
+      },
+      "recursive": {
+        "default": true,
+        "description": "Include subfolders",
+        "title": "Recursive",
+        "type": "boolean"
+      },
+      "include_shared_drives": {
+        "default": false,
+        "description": "Allow shared-drive folders",
+        "title": "Include Shared Drives",
+        "type": "boolean"
+      },
+      "mime_allowlist": {
+        "default": [],
+        "description": "Only these Drive MIME types; empty = all supported",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 50,
+        "title": "Mime Allowlist",
+        "type": "array"
+      },
+      "max_files": {
+        "default": 10000,
+        "maximum": 50000,
+        "minimum": 1,
+        "title": "Max Files",
+        "type": "integer"
+      },
+      "full_sync_every": {
+        "default": 12,
+        "description": "Runs per full re-list",
+        "maximum": 1000,
+        "minimum": 1,
+        "title": "Full Sync Every",
+        "type": "integer"
+      }
+    },
+    "title": "GDriveConfig",
+    "type": "object"
+  }
+}
