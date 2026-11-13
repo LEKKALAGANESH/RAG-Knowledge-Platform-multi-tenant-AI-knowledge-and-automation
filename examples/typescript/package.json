@@ -1,0 +1,17 @@
+{
+  "name": "rag-platform-examples",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript integration examples for the RAG platform API (plain fetch, no SDK package)",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "search": "node src/search.ts",
+    "upload-and-ask": "node src/upload-and-ask.ts",
+    "agent": "node src/agent-run-with-approval.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "typescript": "5.8.3"
+  }
+}
