@@ -1,0 +1,97 @@
+# Default deny, then only the flows the app needs. External dependencies are matched by PORT
+# (their addresses are deployment-specific): Postgres 5432, Redis 6379, S3/MinIO 9000 or 443,
+# Qdrant 6333. Narrow `to:` with ipBlock/namespaceSelector once their addresses are known.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# Ingress controller -> web; web -> api only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: rag-web } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ protocol: TCP, port: 3000 }]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: rag-api } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# Only web reaches the API, which is why FORWARDED_ALLOW_IPS may be the pod CIDR.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: rag-api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: rag-web } }
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    # DB, Redis, S3/MinIO, Qdrant, and HTTPS (LLM/embedding providers, OAuth token exchange,
+    # model download).
+    - ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 6333 }
+        - { protocol: TCP, port: 443 }
+---
+# Worker: deps + connectors (website crawler on 80/443, cloud APIs, S3, Postgres sources). The
+# connector SSRF guard stays the control for private targets; cloud metadata is blocked here too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: rag-worker } }
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0, except: [169.254.169.254/32] }
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 6333 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scheduler-and-migrate
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [rag-scheduler, rag-migrate] }
+  policyTypes: [Ingress, Egress]
+  egress:
+    - ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }

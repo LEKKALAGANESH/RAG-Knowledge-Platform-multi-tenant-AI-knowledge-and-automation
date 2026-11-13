@@ -1,0 +1,41 @@
+# No probes: no HTTP endpoint. Safe to run more than one replica (conditional claims).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rag-scheduler }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: rag-scheduler }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: scheduler
+          image: rag-backend
+          args: ["scheduler", "--interval", "60"]
+          envFrom:
+            - configMapRef: { name: rag-config }
+            - secretRef: { name: rag-secrets }
+          env:
+            - name: MIGRATION_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: rag-secrets, key: DATABASE_URL } }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }

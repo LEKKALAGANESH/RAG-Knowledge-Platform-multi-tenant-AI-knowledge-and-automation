@@ -1,0 +1,319 @@
+{
+  "items": [
+    {
+      "type": "website",
+      "title": "Website",
+      "description": "Crawl public pages or sitemaps. Honors robots.txt; never bypasses logins.",
+      "category": "web",
+      "auth": "none",
+      "config_schema": {
+        "properties": {
+          "start_urls": {
+            "description": "Pages to start from",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Start Urls",
+            "type": "array"
+          },
+          "sitemap_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional sitemap.xml URL",
+            "title": "Sitemap Url"
+          },
+          "max_depth": {
+            "default": 2,
+            "description": "Link hops from a start URL",
+            "maximum": 5,
+            "minimum": 0,
+            "title": "Max Depth",
+            "type": "integer"
+          },
+          "max_pages": {
+            "default": 100,
+            "maximum": 2000,
+            "minimum": 1,
+            "title": "Max Pages",
+            "type": "integer"
+          },
+          "allowed_domains": {
+            "default": [],
+            "description": "Empty = the start URLs' hosts (and subdomains)",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Allowed Domains",
+            "type": "array"
+          },
+          "include_patterns": {
+            "default": [],
+            "description": "Path globs, e.g. /docs/*; empty = all",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Include Patterns",
+            "type": "array"
+          },
+          "exclude_patterns": {
+            "default": [],
+            "description": "Path globs",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Exclude Patterns",
+            "type": "array"
+          },
+          "rate_limit_rps": {
+            "default": 1.0,
+            "exclusiveMinimum": 0,
+            "maximum": 5,
+            "title": "Rate Limit Rps",
+            "type": "number"
+          },
+          "allow_nonstandard_ports": {
+            "default": false,
+            "description": "Allow ports other than 80/443",
+            "title": "Allow Nonstandard Ports",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "start_urls"
+        ],
+        "title": "WebsiteConfig",
+        "type": "object"
+      }
+    },
+    {
+      "type": "s3",
+      "title": "S3-compatible storage",
+      "description": "AWS S3, Cloudflare R2, Backblaze B2, MinIO or GCS (interop keys). Read-only.",
+      "category": "storage",
+      "auth": "api_key",
+      "config_schema": {
+        "properties": {
+          "bucket": {
+            "maxLength": 63,
+            "minLength": 3,
+            "pattern": "^[a-z0-9][a-z0-9._-]*[a-z0-9]$",
+            "title": "Bucket",
+            "type": "string"
+          },
+          "prefix": {
+            "default": "",
+            "description": "Only keys under this prefix",
+            "maxLength": 1024,
+            "title": "Prefix",
+            "type": "string"
+          },
+          "region": {
+            "default": "us-east-1",
+            "pattern": "^[a-z0-9-]{1,32}$",
+            "title": "Region",
+            "type": "string"
+          },
+          "endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Empty = AWS. R2/B2/MinIO/GCS: the provider's S3 endpoint",
+            "title": "Endpoint Url"
+          },
+          "include_extensions": {
+            "default": [],
+            "description": "e.g. .pdf, .md; empty = every supported file",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Include Extensions",
+            "type": "array"
+          },
+          "max_objects": {
+            "default": 10000,
+            "maximum": 50000,
+            "minimum": 1,
+            "title": "Max Objects",
+            "type": "integer"
+          },
+          "allow_private_endpoint": {
+            "default": false,
+            "description": "Allow an endpoint in a private network (self-hosted storage). Off by default.",
+            "title": "Allow Private Endpoint",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bucket"
+        ],
+        "title": "S3Config",
+        "type": "object"
+      }
+    },
+    {
+      "type": "postgres",
+      "title": "PostgreSQL",
+      "description": "Index rows of chosen tables. Read-only role required; no custom SQL.",
+      "category": "database",
+      "auth": "basic",
+      "config_schema": {
+        "$defs": {
+          "TableSpec": {
+            "properties": {
+              "name": {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+                "title": "Name",
+                "type": "string"
+              },
+              "id_column": {
+                "description": "Unique, sortable key (primary key)",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+                "title": "Id Column",
+                "type": "string"
+              },
+              "text_columns": {
+                "items": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "title": "Text Columns",
+                "type": "array"
+              },
+              "title_column": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Title Column"
+              },
+              "updated_column": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Timestamp or integer version for incremental runs",
+                "title": "Updated Column"
+              }
+            },
+            "required": [
+              "name",
+              "id_column",
+              "text_columns"
+            ],
+            "title": "TableSpec",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9.:-]+$",
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 5432,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Port",
+            "type": "integer"
+          },
+          "database": {
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_$.-]+$",
+            "title": "Database",
+            "type": "string"
+          },
+          "schema": {
+            "default": "public",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$",
+            "title": "Schema",
+            "type": "string"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/$defs/TableSpec"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Tables",
+            "type": "array"
+          },
+          "sslmode": {
+            "default": "require",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Sslmode",
+            "type": "string"
+          },
+          "max_rows_per_table": {
+            "default": 10000,
+            "maximum": 100000,
+            "minimum": 1,
+            "title": "Max Rows Per Table",
+            "type": "integer"
+          },
+          "full_sync_every": {
+            "default": 12,
+            "description": "Every Nth run reads all rows and applies deletions",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Full Sync Every",
+            "type": "integer"
+          },
+          "allow_private_endpoint": {
+            "default": false,
+            "description": "Allow a host in a private network (self-hosted DB). Off by default.",
+            "title": "Allow Private Endpoint",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host",
+          "database",
+          "tables"
+        ],
+        "title": "PgConfig",
+        "type": "object"
+      }
+    }
+  ]
+}

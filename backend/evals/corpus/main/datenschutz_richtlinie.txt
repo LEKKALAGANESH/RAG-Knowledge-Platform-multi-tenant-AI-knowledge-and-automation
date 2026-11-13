@@ -1,0 +1,6 @@
+Datenschutzrichtlinie der Kestrel Logistics GmbH
+
+Kundendaten werden für die Dauer der Geschäftsbeziehung und danach sieben Jahre lang aufbewahrt, wie es das Handelsrecht verlangt.
+Anträge auf Löschung personenbezogener Daten werden innerhalb von 30 Tagen bearbeitet.
+Der Datenschutzbeauftragte ist Dr. Jonas Weber und ist unter datenschutz@kestrel.example erreichbar.
+Personenbezogene Daten werden ausschließlich in Rechenzentren in Frankfurt am Main gespeichert und nicht außerhalb der EU übertragen.
