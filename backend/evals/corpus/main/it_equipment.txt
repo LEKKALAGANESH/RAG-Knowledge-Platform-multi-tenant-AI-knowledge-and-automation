@@ -1,0 +1,6 @@
+IT Equipment Standards
+
+The standard laptop for office staff is a Lenovo ThinkPad T14. Software developers receive a MacBook Pro 14.
+Every employee may order one external monitor; the limit for monitor purchases is 300 EUR.
+Equipment is replaced every 4 years, or earlier if it is broken.
+Warehouse staff use rugged Zebra handheld scanners that are shared per shift.

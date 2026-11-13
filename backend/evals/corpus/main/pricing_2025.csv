@@ -1,0 +1,5 @@
+plan,monthly_price_eur,included_seats,storage_gb,support_level
+Starter,29,3,50,Email
+Team,99,10,500,Standard
+Business,249,50,2000,Premium
+Enterprise,custom,unlimited,unlimited,Premium plus dedicated manager
