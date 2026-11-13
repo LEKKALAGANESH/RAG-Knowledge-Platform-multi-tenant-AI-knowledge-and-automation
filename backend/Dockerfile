@@ -15,8 +15,10 @@ RUN /app/.venv/bin/python -m compileall -q app alembic
 
 FROM python:3.12-slim-bookworm
 # tesseract for OCR (eng data; add tesseract-ocr-<lang> per OCR_LANGS). No compilers in this stage.
+# tini is PID 1: the kernel drops default-action signals sent to PID 1, so uvicorn's re-raised
+# SIGTERM would not end it while interpreter exit waits on a busy worker thread.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tini \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 rag \
  && useradd --uid 10001 --gid rag --no-create-home --shell /usr/sbin/nologin rag \
@@ -40,8 +42,10 @@ set -eu
 role="${1:-api}"
 [ $# -gt 0 ] && shift
 case "$role" in
+  # In-flight requests (SSE included) get 20 s, inside the 30 s K8s/compose stop grace period.
   api) exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --no-server-header \
-         --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" "$@" ;;
+         --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" \
+         --timeout-graceful-shutdown 20 "$@" ;;
   worker) exec dramatiq app.worker "$@" ;;
   scheduler) exec python -m app.connectors.scheduler "$@" ;;
   # MIGRATION_DATABASE_URL must be the rag_owner role (ADR 0009), never the superuser.
@@ -56,5 +60,5 @@ EXPOSE 8000
 # Only meaningful for the api role; compose/k8s disable or replace it for worker/scheduler/migrate.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ['PORT'], timeout=2)"]
-ENTRYPOINT ["rag-entrypoint"]
+ENTRYPOINT ["tini", "--", "rag-entrypoint"]
 CMD ["api"]

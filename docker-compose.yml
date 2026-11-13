@@ -123,6 +123,7 @@ services:
       - models:/models
     read_only: true
     tmpfs: [/tmp]
+    stop_grace_period: 30s # > uvicorn --timeout-graceful-shutdown (20 s), same as K8s
     restart: unless-stopped
 
   worker:

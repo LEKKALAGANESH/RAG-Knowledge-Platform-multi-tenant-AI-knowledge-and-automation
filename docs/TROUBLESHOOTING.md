@@ -59,6 +59,19 @@ needs migration 0002).
 **Fix:** press Ctrl+C in the scheduler's own console, or stop the child `python.exe` by its PID. In
 containers, run `python -m app.connectors.scheduler` directly so SIGTERM reaches it.
 
+## API container ignores `docker stop` and exits 137 (fixed)
+
+**Symptom:** `docker stop` on the `api` role waits the full grace period, then the container is
+killed (exit 137).
+
+**Cause:** uvicorn ran as PID 1 with no graceful-shutdown timeout. An in-flight request kept it
+waiting forever, and after shutdown interpreter exit waited on a busy worker thread. Uvicorn then
+re-raises SIGTERM to finish, but the kernel drops default-action signals sent to PID 1.
+
+**Fix:** the image starts `tini` as PID 1 and the api role passes `--timeout-graceful-shutdown 20`.
+A stop now takes a few seconds (up to 20 s with an open request) and exits 143. If you override
+the entrypoint, keep `tini --` in front or use `docker run --init`.
+
 ## `429 rate_limited` on register/login during local work
 
 **Cause:** auth limits are per client IP in a shared Redis. Every local server, test run and helper
