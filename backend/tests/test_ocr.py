@@ -172,5 +172,8 @@ def test_real_tesseract_reads_rendered_text() -> None:
                              font=ImageFont.load_default(size=64))  # fmt: skip
     out = io.BytesIO()
     img.save(out, "PNG")
-    doc = parse_isolated(mime.PNG, out.getvalue(), IngestionSettings())
+    # ocr_enabled=None means "on when tesseract is found". This module also gets
+    # test_ingestion's autouse fixture, which sets OCR_ENABLED=false for every test,
+    # and a bare IngestionSettings() would read that and switch OCR off.
+    doc = parse_isolated(mime.PNG, out.getvalue(), IngestionSettings(ocr_enabled=None))
     assert "INVOICE 4711" in doc.sections[0].text
