@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
@@ -50,6 +50,54 @@ describe("session route CSRF guard", () => {
     const res = await login({ "content-type": "application/json", origin: ORIGIN, "sec-fetch-site": "same-origin" });
     expect(res.status).toBe(204);
     expect(res.headers.get("set-cookie")).toContain("rag_at=at");
+  });
+});
+
+describe("expected origin behind a container or proxy (server URL is http://0.0.0.0:3000)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  async function containerLogin(headers: Record<string, string>, env: Record<string, string> = {}) {
+    vi.resetModules();
+    for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
+    const route = await import("@/app/api/session/[action]/route");
+    const req = new NextRequest("http://0.0.0.0:3000/api/session/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", ...headers },
+      body: creds,
+    });
+    return route.POST(req, { params: Promise.resolve({ action: "login" }) } as never);
+  }
+  const host = { host: "localhost:13062" };
+
+  it("allows an Origin matching the Host the browser sent", async () => {
+    expect((await containerLogin({ ...host, origin: "http://localhost:13062" })).status).toBe(204);
+  });
+
+  it("uses the scheme the trusted proxy reports", async () => {
+    const res = await containerLogin({ host: "app.example.com", "x-forwarded-proto": "https", origin: "https://app.example.com" });
+    expect(res.status).toBe(204);
+  });
+
+  it("allows PUBLIC_ORIGIN regardless of Host", async () => {
+    const env = { PUBLIC_ORIGIN: "https://app.example.com" };
+    expect((await containerLogin({ ...host, origin: "https://app.example.com" }, env)).status).toBe(204);
+    expect((await containerLogin({ host: "app.example.com", origin: "http://app.example.com" }, env)).status).toBe(403);
+  });
+
+  it("blocks a foreign Origin", async () => {
+    expect((await containerLogin({ ...host, origin: "https://evil.example" })).status).toBe(403);
+    const env = { PUBLIC_ORIGIN: "https://app.example.com" };
+    expect((await containerLogin({ ...host, origin: "https://evil.example" }, env)).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a spoofed X-Forwarded-Host", async () => {
+    const res = await containerLogin({ ...host, "x-forwarded-host": "evil.example", origin: "http://evil.example" });
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a PUBLIC_ORIGIN with a path", async () => {
+    await expect(containerLogin(host, { PUBLIC_ORIGIN: "https://app.example.com/app" })).rejects.toThrow(/PUBLIC_ORIGIN/);
   });
 });
 

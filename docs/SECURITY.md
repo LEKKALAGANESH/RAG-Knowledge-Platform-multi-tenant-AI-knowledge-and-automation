@@ -53,7 +53,9 @@ at the end and in [THREAT_MODEL.md](THREAT_MODEL.md). No external security revie
 - Tokens live in httpOnly cookies (`rag_at`, `rag_rt`; `Secure` in production; SameSite Lax). Browser
   JS never sees them.
 - CSRF: session routes and every proxied non-GET request reject a cross-site `Sec-Fetch-Site` or a
-  mismatched `Origin` (403), and session POSTs require `application/json` (415).
+  mismatched `Origin` (403), and session POSTs require `application/json` (415). The expected origin
+  is `PUBLIC_ORIGIN` when set, else the request's `Host` with the trusted proxy's `X-Forwarded-Proto`;
+  `X-Forwarded-Host` is never trusted.
 - Proxy path guard: `.`/`..`/empty segments, encoded slashes or backslashes, and malformed escapes →
   400; the resolved URL must keep the API origin and `/v1/` prefix.
 - Open redirects: `?next=` is resolved against the app origin and must stay same-origin.

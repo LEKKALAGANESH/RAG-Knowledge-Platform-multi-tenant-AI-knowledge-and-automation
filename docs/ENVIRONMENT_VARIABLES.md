@@ -187,6 +187,7 @@ test runs only when `S3_ACCESS_KEY` and `S3_SECRET_KEY` are set.
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | API base. Read server-side by the BFF routes |
 | `REFRESH_TOKEN_TTL_DAYS` | `7` | Server-only (1–90). Refresh-cookie lifetime; must equal the backend's `REFRESH_TOKEN_TTL_DAYS` |
 | `TRUSTED_PROXY_HOPS` | `1` | Server-only (1–10). Reverse proxies in front of Next that append to `X-Forwarded-For`; the BFF forwards the entry the outermost one wrote as the client IP and drops anything left of it |
+| `PUBLIC_ORIGIN` | unset | Server-only. The origin browsers use, e.g. `https://app.example.com` (http(s), no path or trailing slash; an invalid value stops the BFF routes). The CSRF check accepts only this `Origin`. Unset: the browser's `Host` header plus the scheme from `X-Forwarded-Proto` (the entry the outermost trusted proxy wrote). `X-Forwarded-Host` is never read. Recommended in production |
 | `NODE_ENV` | set by Next.js | `production` makes session cookies `Secure` and adds HSTS |
 
 An empty or blank value (`API_KEY_PEPPER=`) counts as unset for every optional backend setting.
