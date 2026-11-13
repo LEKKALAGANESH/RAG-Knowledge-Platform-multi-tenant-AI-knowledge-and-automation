@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rag-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rag-api }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rag-web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rag-web }

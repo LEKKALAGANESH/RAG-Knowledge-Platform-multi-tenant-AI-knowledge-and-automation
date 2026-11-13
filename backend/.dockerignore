@@ -1,0 +1,9 @@
+# Allowlist: only what the image runs. Tests, evals, local blobs, venvs and caches stay out.
+*
+!pyproject.toml
+!uv.lock
+!alembic.ini
+!alembic/
+!app/
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,41 @@
+# Runs `alembic upgrade head` as rag_owner (ADR 0009). Jobs are immutable: delete the finished Job
+# (or let the TTL do it) before applying a new image tag.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-migrate
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: rag-migrate }
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: rag-backend
+          args: ["migrate"]
+          envFrom:
+            - configMapRef: { name: rag-config }
+            - secretRef: { name: rag-secrets }
+            # Listed last, so its MIGRATION_DATABASE_URL (owner role) wins.
+            - secretRef: { name: rag-migrate }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }

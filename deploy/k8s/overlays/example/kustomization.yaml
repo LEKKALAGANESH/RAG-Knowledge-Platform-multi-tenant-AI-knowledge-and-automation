@@ -1,0 +1,31 @@
+# Example overlay: copy it per environment. Real secrets come from your secret manager, not git.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: rag-backend
+    newName: registry.example.com/rag/backend
+    newTag: "0.1.0"
+  - name: rag-web
+    newName: registry.example.com/rag/web
+    newTag: "0.1.0"
+replicas:
+  - { name: rag-worker, count: 2 }
+configMapGenerator:
+  - name: rag-config
+    behavior: merge
+    literals:
+      - CORS_ORIGINS=https://rag.example.com
+      - OAUTH_REDIRECT_BASE=https://rag.example.com
+      - FRONTEND_URL=https://rag.example.com
+      - S3_ENDPOINT_URL=https://s3.example.com
+patches:
+  - target: { kind: Ingress, name: rag }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: rag.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: rag.example.com

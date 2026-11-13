@@ -1,0 +1,21 @@
+# Non-secret backend settings (docs/ENVIRONMENT_VARIABLES.md). Secrets live in secret.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+data:
+  LOG_LEVEL: INFO
+  BLOB_BACKEND: s3
+  S3_ENDPOINT_URL: http://minio.storage.svc:9000
+  S3_BUCKET: rag-documents
+  S3_REGION: us-east-1
+  # Keep equal to the ingress body-size annotation (ingress.yaml: MAX_UPLOAD_MB + 1 MB).
+  MAX_UPLOAD_MB: "50"
+  VECTOR_STORE: pgvector
+  # Public web origin (the ingress host).
+  CORS_ORIGINS: https://rag.example.com
+  OAUTH_REDIRECT_BASE: https://rag.example.com
+  FRONTEND_URL: https://rag.example.com
+  # Peers allowed to set X-Forwarded-For on the API: set to the cluster POD CIDR. Safe because
+  # networkpolicy.yaml lets only web pods reach the API.
+  FORWARDED_ALLOW_IPS: 10.0.0.0/8
