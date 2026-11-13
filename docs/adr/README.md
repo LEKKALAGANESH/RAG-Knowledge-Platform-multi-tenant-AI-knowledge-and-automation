@@ -12,4 +12,5 @@ Format: Context → Decision → Consequences → Alternatives considered. Statu
 | [0006](0006-hmac-api-keys.md) | API keys stored as peppered HMAC, not argon2 |
 | [0007](0007-private-endpoint-gate.md) | Private connector endpoints need a server gate |
 | [0008](0008-refresh-session-grace-window.md) | Refresh sessions with a reuse grace window |
+| [0009](0009-non-superuser-owner-roles.md) | Non-superuser table owner and a BYPASSRLS-only definer role |
 | [0010](0010-qdrant-vector-store.md) | Optional Qdrant vector store behind the same store contract |

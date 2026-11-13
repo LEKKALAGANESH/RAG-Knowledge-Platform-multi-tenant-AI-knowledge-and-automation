@@ -1,0 +1,2 @@
+# Test fixture: a fake API key string in the admin UI tests, not a real credential.
+864779d23b93bf1482733e00b0fd82e93c86d8a6:frontend/tests/admin.test.tsx:generic-api-key:35
